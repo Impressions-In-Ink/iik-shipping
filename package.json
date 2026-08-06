@@ -1,6 +1,6 @@
 {
   "name": "iik-shipping",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "FedEx One Rate box planning and per-destination shipping quotes. Shared by two separately deployed backends so the amount charged and the amount recorded can never disagree.",
   "main": "index.js",
   "files": [
