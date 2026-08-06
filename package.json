@@ -1,0 +1,24 @@
+{
+  "name": "iik-shipping",
+  "version": "1.0.1",
+  "description": "FedEx One Rate box planning and per-destination shipping quotes. Shared by two separately deployed backends so the amount charged and the amount recorded can never disagree.",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "src/",
+    "fixtures/"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint ."
+  },
+  "engines": {
+    "node": "22"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}

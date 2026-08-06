@@ -1,0 +1,310 @@
+{
+  "_doc": [
+    "Shared behavioural contract for the box planner. Read by BOTH",
+    "test/box_planner_test.dart and functions/test/boxPlanner.test.js, so a",
+    "drift between lib/core/utils/box_planner.dart and",
+    "functions/fedex/boxPlanner.js fails a vector instead of surfacing as a",
+    "mismatch between the buyer's quote and the server's charge.",
+    "",
+    "Add a case here FIRST when changing planner behaviour, then make both",
+    "sides pass it. Prices are integer cents. `boxes` is an ordered list of",
+    "[size, units] pairs; order matters (largest first, remainder last).",
+    "`blockers` uses the shared vocabulary and is sorted by the canonical",
+    "blocker order."
+  ],
+  "prices": {
+    "oneRateCents": {
+      "small": 1955,
+      "medium": 2435,
+      "large": 3000
+    }
+  },
+  "presets": {
+    "bc14": {
+      "id": "bc14",
+      "name": "14pt Business Card",
+      "isActive": true,
+      "unitsPerSmallBox": 2000,
+      "unitsPerMediumBox": 4000,
+      "unitsPerLargeBox": 8000,
+      "weightLbsPerThousand": 5.5,
+      "ownPackagingOnly": false
+    },
+    "smallOnly": {
+      "id": "smallOnly",
+      "name": "Small box only",
+      "isActive": true,
+      "unitsPerSmallBox": 500,
+      "weightLbsPerThousand": 10.0,
+      "ownPackagingOnly": false
+    },
+    "banner": {
+      "id": "banner",
+      "name": "3x8 Vinyl Banner",
+      "isActive": true,
+      "weightLbsPerThousand": 4000.0,
+      "ownPackagingOnly": true
+    },
+    "noWeight": {
+      "id": "noWeight",
+      "name": "Incomplete — no weight",
+      "isActive": true,
+      "unitsPerSmallBox": 1000,
+      "ownPackagingOnly": false
+    },
+    "heavy": {
+      "id": "heavy",
+      "name": "Rigid sign, 60 lb each",
+      "isActive": true,
+      "unitsPerSmallBox": 4,
+      "weightLbsPerThousand": 60000.0,
+      "ownPackagingOnly": false
+    },
+    "weightCapped": {
+      "id": "weightCapped",
+      "name": "Dense stock — volume claim beats the weight limit",
+      "isActive": true,
+      "unitsPerSmallBox": 1000,
+      "unitsPerMediumBox": 2000,
+      "unitsPerLargeBox": 4000,
+      "weightLbsPerThousand": 100.0,
+      "ownPackagingOnly": false
+    },
+    "cheapSmall": {
+      "id": "cheapSmall",
+      "name": "Capacity ladder where small boxes win on cost",
+      "isActive": true,
+      "unitsPerSmallBox": 1000,
+      "unitsPerMediumBox": 1100,
+      "unitsPerLargeBox": 1200,
+      "weightLbsPerThousand": 5.0,
+      "ownPackagingOnly": false
+    }
+  },
+  "cases": [
+    {
+      "name": "500 cards fit one small box",
+      "lines": [{ "presetId": "bc14", "quantity": 500 }],
+      "expect": {
+        "boxes": [["small", 500]],
+        "totalCents": 1955,
+        "blockers": []
+      }
+    },
+    {
+      "name": "exactly a full small box stays one small box",
+      "lines": [{ "presetId": "bc14", "quantity": 2000 }],
+      "expect": {
+        "boxes": [["small", 2000]],
+        "totalCents": 1955,
+        "blockers": []
+      }
+    },
+    {
+      "name": "one over a small box steps up to a single medium, not two smalls",
+      "lines": [{ "presetId": "bc14", "quantity": 2001 }],
+      "expect": {
+        "boxes": [["medium", 2001]],
+        "totalCents": 2435,
+        "blockers": []
+      }
+    },
+    {
+      "name": "5000 cards: one large beats a medium plus a small",
+      "lines": [{ "presetId": "bc14", "quantity": 5000 }],
+      "expect": {
+        "boxes": [["large", 5000]],
+        "totalCents": 3000,
+        "blockers": []
+      }
+    },
+    {
+      "name": "8000 cards fill exactly one large box",
+      "lines": [{ "presetId": "bc14", "quantity": 8000 }],
+      "expect": {
+        "boxes": [["large", 8000]],
+        "totalCents": 3000,
+        "blockers": []
+      }
+    },
+    {
+      "name": "10000 cards: large plus small, remainder in the last box",
+      "lines": [{ "presetId": "bc14", "quantity": 10000 }],
+      "expect": {
+        "boxes": [["large", 8000], ["small", 2000]],
+        "totalCents": 4955,
+        "blockers": []
+      }
+    },
+    {
+      "name": "16000 cards fill two large boxes",
+      "lines": [{ "presetId": "bc14", "quantity": 16000 }],
+      "expect": {
+        "boxes": [["large", 8000], ["large", 8000]],
+        "totalCents": 6000,
+        "blockers": []
+      }
+    },
+    {
+      "name": "two lines each get their own boxes",
+      "lines": [
+        { "presetId": "bc14", "quantity": 500, "label": "Cards A" },
+        { "presetId": "bc14", "quantity": 500, "label": "Cards B" }
+      ],
+      "expect": {
+        "boxes": [["small", 500], ["small", 500]],
+        "totalCents": 3910,
+        "blockers": []
+      }
+    },
+    {
+      "name": "a preset with only a small box repeats it",
+      "lines": [{ "presetId": "smallOnly", "quantity": 1200 }],
+      "expect": {
+        "boxes": [["small", 500], ["small", 500], ["small", 200]],
+        "totalCents": 5865,
+        "blockers": []
+      }
+    },
+    {
+      "name": "weight caps a declared capacity: 100 lb/1000 allows only 500 per box",
+      "_note": [
+        "At 0.1 lb per unit the 50 lb ceiling allows 500 units in ANY size, so",
+        "the weight cap flattens all three capacities to 500. With equal",
+        "capacity the cheapest box must win — picking large here would",
+        "overcharge the customer by $20 for identical service."
+      ],
+      "lines": [{ "presetId": "weightCapped", "quantity": 1000 }],
+      "expect": {
+        "boxes": [["small", 500], ["small", 500]],
+        "totalCents": 3910,
+        "blockers": []
+      }
+    },
+    {
+      "name": "no box exceeds the 50 lb limit once weight-capped",
+      "lines": [{ "presetId": "weightCapped", "quantity": 500 }],
+      "expect": {
+        "boxes": [["small", 500]],
+        "totalCents": 1955,
+        "blockers": []
+      }
+    },
+    {
+      "name": "cheaper small boxes win when the capacity ladder is flat",
+      "lines": [{ "presetId": "cheapSmall", "quantity": 2000 }],
+      "expect": {
+        "boxes": [["small", 1000], ["small", 1000]],
+        "totalCents": 3910,
+        "blockers": []
+      }
+    },
+    {
+      "name": "missing preset blocks the destination",
+      "lines": [{ "presetId": null, "quantity": 500 }],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["missingPreset"] }
+    },
+    {
+      "name": "blank preset id counts as missing",
+      "lines": [{ "presetId": "   ", "quantity": 500 }],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["missingPreset"] }
+    },
+    {
+      "name": "deleted preset blocks the destination",
+      "lines": [{ "presetId": "ghost", "quantity": 500 }],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["unknownPreset"] }
+    },
+    {
+      "name": "own-packaging piece blocks flat-rate planning",
+      "lines": [{ "presetId": "banner", "quantity": 2 }],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["ownPackagingOnly"]
+      }
+    },
+    {
+      "name": "preset without a weight cannot be planned",
+      "lines": [{ "presetId": "noWeight", "quantity": 500 }],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["incompletePreset"]
+      }
+    },
+    {
+      "name": "a single unit over the weight limit blocks planning",
+      "lines": [{ "presetId": "heavy", "quantity": 1 }],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["unitTooHeavy"] }
+    },
+    {
+      "name": "zero quantity is rejected rather than priced as free",
+      "lines": [{ "presetId": "bc14", "quantity": 0 }],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["invalidQuantity"]
+      }
+    },
+    {
+      "name": "negative quantity is rejected",
+      "lines": [{ "presetId": "bc14", "quantity": -5 }],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["invalidQuantity"]
+      }
+    },
+    {
+      "name": "a volume needing more than 20 boxes asks for a manual quote",
+      "lines": [{ "presetId": "bc14", "quantity": 200000 }],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["exceedsBoxCap"] }
+    },
+    {
+      "name": "ONE blocked line voids the whole destination, not just that line",
+      "lines": [
+        { "presetId": "bc14", "quantity": 500 },
+        { "presetId": "banner", "quantity": 1 }
+      ],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["ownPackagingOnly"]
+      }
+    },
+    {
+      "name": "several distinct blockers report in canonical order",
+      "lines": [
+        { "presetId": null, "quantity": 100 },
+        { "presetId": "banner", "quantity": 1 },
+        { "presetId": "bc14", "quantity": 0 }
+      ],
+      "expect": {
+        "boxes": [],
+        "totalCents": 0,
+        "blockers": ["missingPreset", "ownPackagingOnly", "invalidQuantity"]
+      }
+    },
+    {
+      "name": "an empty line list plans nothing and blocks nothing",
+      "lines": [],
+      "expect": { "boxes": [], "totalCents": 0, "blockers": [] }
+    },
+    {
+      "name": "an unpriced box size is never selected",
+      "lines": [{ "presetId": "bc14", "quantity": 3000 }],
+      "prices": { "oneRateCents": { "small": 1955 } },
+      "expect": {
+        "boxes": [["small", 2000], ["small", 1000]],
+        "totalCents": 3910,
+        "blockers": []
+      }
+    },
+    {
+      "name": "no priced box at all blocks the destination",
+      "lines": [{ "presetId": "bc14", "quantity": 500 }],
+      "prices": { "oneRateCents": {} },
+      "expect": { "boxes": [], "totalCents": 0, "blockers": ["noPricedBox"] }
+    }
+  ]
+}

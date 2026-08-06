@@ -1,0 +1,291 @@
+{
+  "_doc": [
+    "Shared behavioural contract for the per-destination shipping quote. Read by",
+    "BOTH test/shipping_quote_test.dart and functions/test/shippingQuote.test.js,",
+    "so the client's quote and the server's charge cannot drift.",
+    "",
+    "This number lands on the card charge AND on the invoice delivery line",
+    "that becomes the accounting revenue record, so a drift here is an accounting",
+    "defect. Add a case here FIRST when changing behaviour.",
+    "",
+    "`destinations` is ordered (first-seen destination order). Each entry is",
+    "{key, cents, gap} where gap is null for a priced destination. Lines use the",
+    "order-document shape: quantity + optional packagingPresetId +",
+    "deliveryLocationId."
+  ],
+  "prices": {
+    "oneRateCents": { "small": 1955, "medium": 2435, "large": 3000 }
+  },
+  "presets": {
+    "bc14": {
+      "id": "bc14",
+      "name": "14pt Business Card",
+      "isActive": true,
+      "unitsPerSmallBox": 2000,
+      "unitsPerMediumBox": 4000,
+      "unitsPerLargeBox": 8000,
+      "weightLbsPerThousand": 5.5,
+      "ownPackagingOnly": false
+    },
+    "banner": {
+      "id": "banner",
+      "name": "3x8 Vinyl Banner",
+      "isActive": true,
+      "weightLbsPerThousand": 4000.0,
+      "ownPackagingOnly": true
+    },
+    "noWeight": {
+      "id": "noWeight",
+      "name": "Incomplete preset",
+      "isActive": true,
+      "unitsPerSmallBox": 1000,
+      "ownPackagingOnly": false
+    }
+  },
+  "cases": [
+    {
+      "name": "single destination, one small box",
+      "lines": [{ "packagingPresetId": "bc14", "quantity": 500 }],
+      "expect": {
+        "destinations": [
+          { "key": "__order_default__", "cents": 1955, "gap": null }
+        ],
+        "pricedCents": 1955,
+        "isComplete": true,
+        "boxCount": 1
+      }
+    },
+    {
+      "name": "two lines to the same default destination share a plan",
+      "lines": [
+        { "packagingPresetId": "bc14", "quantity": 500 },
+        { "packagingPresetId": "bc14", "quantity": 500 }
+      ],
+      "expect": {
+        "destinations": [
+          { "key": "__order_default__", "cents": 3910, "gap": null }
+        ],
+        "pricedCents": 3910,
+        "isComplete": true,
+        "boxCount": 2
+      }
+    },
+    {
+      "name": "two destinations are priced independently",
+      "lines": [
+        {
+          "packagingPresetId": "bc14",
+          "quantity": 500,
+          "deliveryLocationId": "loc-a"
+        },
+        {
+          "packagingPresetId": "bc14",
+          "quantity": 5000,
+          "deliveryLocationId": "loc-b"
+        }
+      ],
+      "expect": {
+        "destinations": [
+          { "key": "loc-a", "cents": 1955, "gap": null },
+          { "key": "loc-b", "cents": 3000, "gap": null }
+        ],
+        "pricedCents": 4955,
+        "isComplete": true,
+        "boxCount": 2
+      }
+    },
+    {
+      "name": "id-less lines collapse into one order-default destination",
+      "lines": [
+        {
+          "packagingPresetId": "bc14",
+          "quantity": 500,
+          "deliveryLocationId": "loc-a"
+        },
+        { "packagingPresetId": "bc14", "quantity": 500 },
+        { "packagingPresetId": "bc14", "quantity": 500 }
+      ],
+      "expect": {
+        "destinations": [
+          { "key": "loc-a", "cents": 1955, "gap": null },
+          { "key": "__order_default__", "cents": 3910, "gap": null }
+        ],
+        "pricedCents": 5865,
+        "isComplete": true,
+        "boxCount": 3
+      }
+    },
+    {
+      "name": "unlinked product is a productNotConfigured gap, not a silent flat charge",
+      "lines": [{ "quantity": 500 }],
+      "expect": {
+        "destinations": [
+          {
+            "key": "__order_default__",
+            "cents": 0,
+            "gap": "productNotConfigured"
+          }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "deleted preset also reads as productNotConfigured",
+      "lines": [{ "packagingPresetId": "ghost", "quantity": 500 }],
+      "expect": {
+        "destinations": [
+          {
+            "key": "__order_default__",
+            "cents": 0,
+            "gap": "productNotConfigured"
+          }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "incomplete preset is presetIncomplete",
+      "lines": [{ "packagingPresetId": "noWeight", "quantity": 500 }],
+      "expect": {
+        "destinations": [
+          {
+            "key": "__order_default__",
+            "cents": 0,
+            "gap": "presetIncomplete"
+          }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "own-packaging piece is ownPackaging, needing a Ground quote",
+      "lines": [{ "packagingPresetId": "banner", "quantity": 2 }],
+      "expect": {
+        "destinations": [
+          { "key": "__order_default__", "cents": 0, "gap": "ownPackaging" }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "huge volume is tooLargeForFlatRate",
+      "lines": [{ "packagingPresetId": "bc14", "quantity": 200000 }],
+      "expect": {
+        "destinations": [
+          {
+            "key": "__order_default__",
+            "cents": 0,
+            "gap": "tooLargeForFlatRate"
+          }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "no configured rates is ratesNotConfigured, never free shipping",
+      "lines": [{ "packagingPresetId": "bc14", "quantity": 500 }],
+      "prices": { "oneRateCents": {} },
+      "expect": {
+        "destinations": [
+          {
+            "key": "__order_default__",
+            "cents": 0,
+            "gap": "ratesNotConfigured"
+          }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "zero quantity is invalidLine",
+      "lines": [{ "packagingPresetId": "bc14", "quantity": 0 }],
+      "expect": {
+        "destinations": [
+          { "key": "__order_default__", "cents": 0, "gap": "invalidLine" }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "a gap on ONE destination does not void the others",
+      "_note": [
+        "This is the difference between destination-level and order-level",
+        "all-or-nothing. A banner going to one address must not stop us pricing",
+        "the business cards going to another — those are separate invoices",
+        "with separate delivery jobs."
+      ],
+      "lines": [
+        {
+          "packagingPresetId": "bc14",
+          "quantity": 500,
+          "deliveryLocationId": "loc-a"
+        },
+        {
+          "packagingPresetId": "banner",
+          "quantity": 1,
+          "deliveryLocationId": "loc-b"
+        }
+      ],
+      "expect": {
+        "destinations": [
+          { "key": "loc-a", "cents": 1955, "gap": null },
+          { "key": "loc-b", "cents": 0, "gap": "ownPackaging" }
+        ],
+        "pricedCents": 1955,
+        "isComplete": false,
+        "boxCount": 1
+      }
+    },
+    {
+      "name": "a mixed line within ONE destination blocks that destination",
+      "_note": [
+        "Within a single shipment the box plan is all-or-nothing, because those",
+        "lines go in the same boxes on the same invoice."
+      ],
+      "lines": [
+        {
+          "packagingPresetId": "bc14",
+          "quantity": 500,
+          "deliveryLocationId": "loc-a"
+        },
+        {
+          "packagingPresetId": "banner",
+          "quantity": 1,
+          "deliveryLocationId": "loc-a"
+        }
+      ],
+      "expect": {
+        "destinations": [
+          { "key": "loc-a", "cents": 0, "gap": "ownPackaging" }
+        ],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    },
+    {
+      "name": "an empty order quotes nothing and is not complete",
+      "lines": [],
+      "expect": {
+        "destinations": [],
+        "pricedCents": 0,
+        "isComplete": false,
+        "boxCount": 0
+      }
+    }
+  ]
+}
